@@ -3,8 +3,10 @@ from PIL import Image, ImageDraw
 import json
 import cv2
 import os
+import math
 
 labels2color = {"PED": 100, "SRF": 200, "IRF": 255}
+
 '''usm sharping'''
 
 
@@ -119,17 +121,28 @@ def create_SLIC_image(img_path, region_size=20, ruler=20, iterate=10):
     W, H = label_slic.shape[:2]
     clsuters = [[] for _ in range(number_slic)]  # save the cluster
     neigbor_up = [[] for _ in range(number_slic)]  #save the neigbor relation
+    xy_center = []  #每个聚类的中心点
+
     for x in range(W):
         for y in range(H):
             clsuters[label_slic[x][y]].append([x, y])
+
+    for i in range(number_slic):
+        x_center = int(np.median([x_[0] for x_ in clsuters[i]]))
+        y_center = int(np.median([y_[1] for y_ in clsuters[i]]))
+        xy_center.append([x_center, y_center])
+
+    for x in range(W):
+        for y in range(H):
             if mask_slic[x][y] == 255:
-                for dx, dy in [(-1, 0)]:#(-1, -1), (-1, 1)
+                for dx, dy in [(-1, 0), (-1, -1), (-1, 1)]:  #(-1, -1), (-1, 1)
                     n_x, n_y = x + dx, y + dy
                     if n_x >= 0 and n_x < W and n_y >= 0 and n_y < H:
                         if label_slic[n_x][n_y] != label_slic[x][
                                 y] and label_slic[n_x][n_y] not in neigbor_up[
                                     label_slic[x][y]] and len(
-                                        neigbor_up[label_slic[x][y]]) < 2:
+                                        neigbor_up[label_slic[x][y]]
+                                    ) < 2:  #and p_p_distance(xy_center[label_slic[x][y]], xy_center[label_slic[n_x][n_y]]) < proximity_distance:
                             # print(1)
                             # break
                             neigbor_up[label_slic[x][y]].append(
@@ -150,55 +163,57 @@ def create_SLIC_image(img_path, region_size=20, ruler=20, iterate=10):
                             # break
                             neigbor_all[label_slic[x][y]].append(
                                 label_slic[n_x][n_y])
-    return clsuters, neigbor_up, neigbor_all, label_slic, img
+    #get the center of each superpixel
+
+    return clsuters, neigbor_up, neigbor_all, label_slic, img, xy_center
 
 
 '''compute the dist matchscore (crop,mask)'''
 
 
-def get_crop_mask(key, clsuters):
-    minx, miny, maxx, maxy = float('inf'), float('inf'), 0, 0
-    for [x, y] in clsuters[key]:
-        if x < minx:
-            minx = x
-        if x > maxx:
-            maxx = x
-        if y < miny:
-            miny = y
-        if y > maxy:
-            maxy = y
-    mask = np.zeros((maxx - minx + 1, maxy - miny + 1), dtype=np.uint8)
-    for [x, y] in clsuters[key]:
-        mask[x - minx][y - miny] = 1
-    return minx, miny, maxx, maxy, mask
+# def get_crop_mask(key, clsuters):
+#     minx, miny, maxx, maxy = float('inf'), float('inf'), 0, 0
+#     for [x, y] in clsuters[key]:
+#         if x < minx:
+#             minx = x
+#         if x > maxx:
+#             maxx = x
+#         if y < miny:
+#             miny = y
+#         if y > maxy:
+#             maxy = y
+#     mask = np.zeros((maxx - minx + 1, maxy - miny + 1), dtype=np.uint8)
+#     for [x, y] in clsuters[key]:
+#         mask[x - minx][y - miny] = 1
+#     return minx, miny, maxx, maxy, mask
 
 
 '''compute the match_score (dist)'''
 
 
-def get_hist_dice(key, current_key, clsuters, img):
-    minx_c, miny_c, maxx_c, maxy_c, mask_c = get_crop_mask(
-        current_key, clsuters)
-    minx_k, miny_k, maxx_k, maxy_k, mask_k = get_crop_mask(key, clsuters)
+# def get_hist_dice(key, current_key, clsuters, img):
+#     minx_c, miny_c, maxx_c, maxy_c, mask_c = get_crop_mask(
+#         current_key, clsuters)
+#     minx_k, miny_k, maxx_k, maxy_k, mask_k = get_crop_mask(key, clsuters)
 
-    img_c = img[minx_c:maxx_c + 1, miny_c:maxy_c + 1]
-    img_k = img[minx_k:maxx_k + 1, miny_k:maxy_k + 1]
-    # img_c = img.crop((miny_c, minx_c, maxy_c + 1, maxx_c + 1))
-    # img_k = img.crop((miny_k, minx_k, maxy_k + 1, maxx_k + 1))
+#     img_c = img[minx_c:maxx_c + 1, miny_c:maxy_c + 1]
+#     img_k = img[minx_k:maxx_k + 1, miny_k:maxy_k + 1]
+#     # img_c = img.crop((miny_c, minx_c, maxy_c + 1, maxx_c + 1))
+#     # img_k = img.crop((miny_k, minx_k, maxy_k + 1, maxx_k + 1))
 
-    # img_c =  cv2.cvtColor(np.asarray(img_c),cv2.COLOR_RGB2BGR)
-    # img_k = cv2.cvtColor(np.asarray(img_k),cv2.COLOR_RGB2BGR)
+#     # img_c =  cv2.cvtColor(np.asarray(img_c),cv2.COLOR_RGB2BGR)
+#     # img_k = cv2.cvtColor(np.asarray(img_k),cv2.COLOR_RGB2BGR)
 
-    img_c = cv2.cvtColor(img_c, cv2.COLOR_BGR2GRAY)
-    img_k = cv2.cvtColor(img_k, cv2.COLOR_BGR2GRAY)
+#     img_c = cv2.cvtColor(img_c, cv2.COLOR_BGR2GRAY)
+#     img_k = cv2.cvtColor(img_k, cv2.COLOR_BGR2GRAY)
 
-    H_c = cv2.calcHist([img_c], [0], mask_c, [256], [0, 256])
-    H_c = cv2.normalize(H_c, H_c, 0, 1, cv2.NORM_MINMAX, -1)
+#     H_c = cv2.calcHist([img_c], [0], mask_c, [256], [0, 256])
+#     H_c = cv2.normalize(H_c, H_c, 0, 1, cv2.NORM_MINMAX, -1)
 
-    H_k = cv2.calcHist([img_k], [0], mask_k, [256], [0, 256])
-    H_k = cv2.normalize(H_k, H_k, 0, 1, cv2.NORM_MINMAX, -1)
-    match_score = cv2.compareHist(H_c, H_k, method=cv2.HISTCMP_CORREL)
-    return match_score
+#     H_k = cv2.calcHist([img_k], [0], mask_k, [256], [0, 256])
+#     H_k = cv2.normalize(H_k, H_k, 0, 1, cv2.NORM_MINMAX, -1)
+#     match_score = cv2.compareHist(H_c, H_k, method=cv2.HISTCMP_CORREL)
+#     return match_score
 
 
 '''cos dice'''
@@ -221,13 +236,31 @@ def get_cosin_dice(key, current_key, clsuters, img):
 
     return cosine_similarity(frequent_cur_key, frequent_key)
 
+'''compute the distance of point and point'''
 
+
+def p_p_distance(center_a, center_b):
+    return math.sqrt((center_a[0] - center_b[0])**2 +
+                     (center_a[1] - center_b[1])**2)
+
+def set_probality(cluster, probability_map, distance, current_key):
+    probability = max(1.0 - 0.1 * ((distance) // 2), 0.0)
+    for [x, y] in cluster[current_key]:
+        probability_map[x][y] = probability
+    return probability_map
 '''Expand the field of pixel blocks corresponding to weak labels(PED)'''
 
 
-def get_PED_labels(masked_index, neigbor, clsuters, img, Threshold=0.5):
+def get_PED_labels(masked_index,
+                   neigbor,
+                   clsuters,
+                   img,
+                   xy_center,
+                   probability_map,
+                   proximity_distance,
+                   Threshold=0.5):
     if len(masked_index) < 3:
-        return masked_index
+        return masked_index, probability_map
     stack = []
     already = []
     truth_mask = {}
@@ -240,22 +273,22 @@ def get_PED_labels(masked_index, neigbor, clsuters, img, Threshold=0.5):
         while stack:
             current_key = stack.pop(0)
             dice = get_cosin_dice(key, current_key, clsuters, img)
-            # print(key, current_key, dice)
             if dice >= Threshold:
                 neigbor_keys = neigbor[current_key]
-                # print(neigbor_keys)
                 for neigbor_key in neigbor_keys:
                     if neigbor_key not in already:
                         already.append(neigbor_key)
                         stack.append(neigbor_key)
                 truth_mask[current_key] = value
-                # Threshold += add_t
                 num += 1
+                if key != current_key:
+                    distance = p_p_distance(xy_center[key], xy_center[current_key]) // proximity_distance + 1#几格距离
+                    probability_map = set_probality(clsuters, probability_map, distance, current_key)
             if num >= 9:
                 break
             else:
                 continue
-    return truth_mask
+    return truth_mask, probability_map
 
 
 '''Expand the field of pixel blocks corresponding to weak labels(SRF and IRF)'''
@@ -266,6 +299,9 @@ def get_SRF_IRF_labels(masked_index,
                        neigbor,
                        clsuters,
                        img,
+                       xy_center,
+                       probability_map,
+                       proximity_distance,
                        Threshold=0.5):
     stack = []
     already = []
@@ -288,16 +324,19 @@ def get_SRF_IRF_labels(masked_index,
                         already.append(neigbor_key)
                         stack.append(neigbor_key)
                 truth_mask[current_key] = value
-                # threshold += add_t
+
+                if key != current_key:
+                    distance = p_p_distance(xy_center[key], xy_center[current_key]) // proximity_distance + 1#几格距离
+                    probability_map = set_probality(clsuters, probability_map, distance, current_key)
             else:
                 continue
-    return truth_mask
+    return truth_mask, probability_map
 
 
 '''fill the holes'''
 
 
-def fill_holes(neigbor, truth_mask):
+def fill_holes(clsuters, neigbor, truth_mask, probability_map):
     probabilty = []
     add_mask = {}
 
@@ -320,14 +359,19 @@ def fill_holes(neigbor, truth_mask):
                     break
             else:
                 break
-        if  num >= l - 2 :
+        if num >= l - 2:
             add_mask[p] = value
-    return {**truth_mask, **add_mask}
+            probability_map = set_probality(clsuters, probability_map, 3, p)#fill的块修改为0.8
+    return {**truth_mask, **add_mask}, probability_map
 
 
 # mend some pixels
-def mend(mask):
-    return cv2.medianBlur(mask, 5)
+def mend(mask, probability_map):
+    mask_mend = cv2.medianBlur(mask, 5)
+    probability_map[mask != mask_mend] = 1.0#mend的像素修改为1
+    return mask_mend, probability_map
+
+
 #delete some nei PED
 def get_detach_PED(truth_PED_mask, neigbor, truth_SRF_IRF_mask):
     del_key = []
@@ -341,6 +385,3 @@ def get_detach_PED(truth_PED_mask, neigbor, truth_SRF_IRF_mask):
     for k in del_key:
         truth_PED_mask.pop(k, None)
     return truth_PED_mask
-
-
-    
