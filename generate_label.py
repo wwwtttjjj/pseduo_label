@@ -69,9 +69,10 @@ if __name__ == "__main__":
                                              '.png')
             np.save(
                 'data/probability_map/' + image_path.split('\\')[-1][:-4] +
-                '.npy', probability_map)
+                '.npy', np.uint8(probability_map * 10))
 
             continue
+
 
         PED_index, SRF_IRF_index, mask_blank = utils.create_index(json_path)
         clsuters, neigbor_up, neigbor_all, label_slic, img, xy_center = utils.create_SLIC_image(

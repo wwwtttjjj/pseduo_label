@@ -399,7 +399,15 @@ def fill_holes(clsuters, neigbor, truth_mask, probability_map):
 # mend some pixels
 def mend(mask, probability_map):
     mask_mend = cv2.medianBlur(mask, 5)
-    probability_map[mask != mask_mend] = 1.0#mend的像素修改为1
+    probability_map = np.uint8(probability_map * 10)
+    probability_map = cv2.medianBlur(probability_map, 5)
+    # print(probability_map[2-1:2+1,2-1:2+1])
+    # index = np.array(mask != mask_mend)
+    # for x in range(1, index.shape[0] - 1):
+    #     for y in range(1, index.shape[1] - 1):
+    #         if index[x][y]:
+    #             probability_map = np.median(probability_map[x-1:x+1,y-1:y+1])
+
     return mask_mend, probability_map
 
 
