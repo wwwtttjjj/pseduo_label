@@ -52,6 +52,7 @@ if __name__ == "__main__":
 
         image_path = jpg_paths[i]
         json_path = json_paths[i]
+        
 
         img = cv2.imread(image_path)
         W, H = img.shape[0], img.shape[1]
@@ -101,7 +102,7 @@ if __name__ == "__main__":
             Threshold=args.SRF_IRF_threshold)
 
         truth_PED_mask = utils.get_detach_PED(truth_PED_mask, neigbor_all,
-                                              truth_SRF_IRF_mask)
+                                              truth_SRF_IRF_mask, clsuters, probability_map)
         truth_mask = {**PED_short_mask, **truth_PED_mask, **truth_SRF_IRF_mask}
         truth_mask, probability_map = utils.fill_holes(clsuters, neigbor_all, truth_mask, probability_map)
         for key, value in truth_mask.items():

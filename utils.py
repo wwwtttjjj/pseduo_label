@@ -7,6 +7,30 @@ import math
 
 labels2color = {"PED": 100, "SRF": 200, "IRF": 255}
 
+'''median'''
+def median_Blur_gray(img, filiter_size = 3):  #当输入的图像为灰度图像
+    image_copy = np.array(img, copy = True).astype(np.float32)
+    processed = np.zeros_like(image_copy)
+    middle = int(filiter_size / 2)
+    
+    for i in range(middle, image_copy.shape[0] - middle):
+        for j in range(middle, image_copy.shape[1] - middle):
+            temp = []
+            for m in range(i - middle, i + middle +1):
+                for n in range(j - middle, j + middle + 1):
+                    if m-middle < 0 or m+middle+1 >image_copy.shape[0] or n-middle < 0 or n+middle+1 > image_copy.shape[1]:
+                        temp.append(0)
+                    else:
+                        temp.append(image_copy[m][n])
+                    #count += 1
+            temp.sort()
+            processed[i][j] = temp[(int(filiter_size*filiter_size/2)+1)]
+    processed = processed.astype(np.uint64)
+    for i in range(img.shape[0]):
+        for j in range(img.shape[1]):
+            if i == 0 or j == 0 or i == img.shape[0] - 1 or j == img.shape[1] - 1:
+                processed[i][j] = img[i][j]
+    return processed
 '''usm sharping'''
 
 
@@ -114,7 +138,11 @@ def create_SLIC_image(img_path, region_size=20, ruler=20, iterate=10):
     slic.iterate(iterate)  #迭代次数，越大效果越好
     mask_slic = slic.getLabelContourMask()  #获取Mask，超像素边缘Mask==1
     label_slic = slic.getLabels()  #获取超像素标签
+
+    label_slic = median_Blur_gray(label_slic, filiter_size=3)
     number_slic = slic.getNumberOfSuperpixels()  #获取超像素数目
+    # print(number_slic)
+    # print(len(np.unique(label_slic)))
     # mask_inv_slic = cv2.bitwise_not(mask_slic)
     # img_slic = cv2.bitwise_and(img,img,mask =  mask_inv_slic) #在原图上绘制超像素边界
     # cv2.imwrite('1.jpg',img_slic)
@@ -128,9 +156,12 @@ def create_SLIC_image(img_path, region_size=20, ruler=20, iterate=10):
             clsuters[label_slic[x][y]].append([x, y])
 
     for i in range(number_slic):
-        x_center = int(np.median([x_[0] for x_ in clsuters[i]]))
-        y_center = int(np.median([y_[1] for y_ in clsuters[i]]))
-        xy_center.append([x_center, y_center])
+        if clsuters[i] != []:
+            x_center = int(np.median([x_[0] for x_ in clsuters[i]]))
+            y_center = int(np.median([y_[1] for y_ in clsuters[i]]))
+            xy_center.append([x_center, y_center])
+        else:
+            xy_center.append([])
 
     for x in range(W):
         for y in range(H):
@@ -373,7 +404,7 @@ def mend(mask, probability_map):
 
 
 #delete some nei PED
-def get_detach_PED(truth_PED_mask, neigbor, truth_SRF_IRF_mask):
+def get_detach_PED(truth_PED_mask, neigbor, truth_SRF_IRF_mask, clsuters, probability_map):
     del_key = []
 
     # truth_mask_fill_hole = truth_mask
@@ -384,4 +415,5 @@ def get_detach_PED(truth_PED_mask, neigbor, truth_SRF_IRF_mask):
                 continue
     for k in del_key:
         truth_PED_mask.pop(k, None)
+        probability_map = set_probality(clsuters, probability_map, 0, k)
     return truth_PED_mask
