@@ -4,8 +4,10 @@ import json
 import cv2
 import os
 import math
+import albumentations
 
 labels2color = {"PED": 100, "SRF": 200, "IRF": 255}
+# trans = albumentations.Compose([albumentations.CLAHE(clip_limit=4.0,tile_grid_size=(4, 4), p=0.9)])
 
 '''median'''
 def median_Blur_gray(img, filiter_size = 3):  #当输入的图像为灰度图像
@@ -36,7 +38,7 @@ def median_Blur_gray(img, filiter_size = 3):  #当输入的图像为灰度图像
 
 def usm_edge_sharpening(img):
     blur_img = cv2.GaussianBlur(img, (0, 0), 5)
-    usm = cv2.addWeighted(img, 1.5, blur_img, -0.5, 0)
+    usm = cv2.addWeighted(img, 2.0, blur_img, -0.5, 0)
     return usm
 
 
@@ -130,6 +132,8 @@ def get_SRF_IRF_mask(SRF_IRF_index, label_slic):
 
 def create_SLIC_image(img_path, region_size=20, ruler=20, iterate=10):
     img = cv2.imread(img_path)
+    # sample = trans(image = img)#CACLE
+    # img = sample['image']
     # img = usm_edge_sharpening(img)
     #初始化slic项，超像素平均尺寸20（默认为10），平滑因子20
     slic = cv2.ximgproc.createSuperpixelSLIC(img,
@@ -315,6 +319,9 @@ def get_PED_labels(masked_index,
                 if key != current_key:
                     distance = p_p_distance(xy_center[key], xy_center[current_key]) // proximity_distance + 1#几格距离
                     probability_map = set_probality(clsuters, probability_map, distance, current_key)
+            #neigbor set 0.8(0 label)
+            elif dice >= 0.5:
+                probability_map = set_probality(clsuters, probability_map, 4, current_key)
             if num >= 9:
                 break
             else:
@@ -359,6 +366,9 @@ def get_SRF_IRF_labels(masked_index,
                 if key != current_key:
                     distance = p_p_distance(xy_center[key], xy_center[current_key]) // proximity_distance + 1#几格距离
                     probability_map = set_probality(clsuters, probability_map, distance, current_key)
+                #neigbor set 0.8(0 label)
+            elif dice >= 0.5:
+                probability_map = set_probality(clsuters, probability_map, 4, current_key)
             else:
                 continue
     return truth_mask, probability_map
