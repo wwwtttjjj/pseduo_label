@@ -14,20 +14,20 @@ def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--PED_threshold',
                         type=float,
-                        default=0.65,
+                        default=0.5,
                         help='the threshold of hist compare distance [0, 1]')
     parser.add_argument('--SRF_IRF_threshold',
                         type=float,
-                        default=0.75,
+                        default=0.6,
                         help='the threshold of hist compare distance [0, 1]')
 
     parser.add_argument('--region_size',
                         type=int,
-                        default=20,
+                        default=13,
                         help='the region_size of superpixel')
     parser.add_argument('--ruler',
                         type=int,
-                        default=20,
+                        default=14,
                         help='the ruler of superpixel')
     parser.add_argument('--data_path',
                         type=str,
@@ -52,12 +52,16 @@ if __name__ == "__main__":
 
         image_path = jpg_paths[i]
         json_path = json_paths[i]
+        # if os.path.exists('data/pseudo_label/' +
+        #                            image_path.split('\\')[-1][:-4] + '.png'):
+        #     continue
         
 
         img = cv2.imread(image_path)
         W, H = img.shape[0], img.shape[1]
         probability_map = np.array(Image.fromarray(np.ones(
             (W, H))).convert('L'),dtype=float)
+        probability_map = probability_map / 2#初始值设置为0.5
 
         #全阴性
         if not os.path.isfile(json_path):
@@ -73,12 +77,12 @@ if __name__ == "__main__":
 
             continue
 
-
-        PED_index, SRF_IRF_index, mask_blank = utils.create_index(json_path)
-        clsuters, neigbor_up, neigbor_all, label_slic, img, xy_center = utils.create_SLIC_image(
-            image_path, args.region_size, args.ruler)
         proximity_distance = (1.25) * args.region_size * math.sqrt(2)  #标准一格距离度量
-        PED_mask, PED_short_mask = utils.get_PED_mask(PED_index, label_slic)
+
+        clsuters, neigbor_up, neigbor_all, label_slic, img, xy_center, PED_index, SRF_IRF_index, mask_blank = utils.create_SLIC_image(
+            image_path, json_path, args.region_size, args.ruler)
+        PED_mask, PED_short_mask, slope = utils.get_PED_mask(PED_index, label_slic)
+        line_PED = {**PED_mask, **PED_short_mask}
         SRF_IRF_mask = utils.get_SRF_IRF_mask(SRF_IRF_index, label_slic)
 
         truth_PED_mask, probability_map = utils.get_PED_labels(
@@ -109,8 +113,20 @@ if __name__ == "__main__":
         for key, value in truth_mask.items():
             for positions in clsuters[key]:
                 mask_blank[positions[0]][positions[1]] = value
+        # 把PED线段下方的points消掉
+        for key, value in line_PED.items():
+                for positions in clsuters[key]:
+                    A = slope[key][0]
+                    B = slope[key][1]
+                    C = slope[key][2]
+                    slope_cur = A * positions[0] + B * positions[1] + C
+                    if slope_cur >= 0 :
+                        mask_blank[positions[0]][positions[1]] = 0
+                        probability_map[positions[0]][positions[1]] = 1
+
         # Image.fromarray(mask_blank).show()
         mask, probability_map = utils.mend(mask_blank, probability_map)
+
 
         Image.fromarray(mask).save('data/pseudo_label/' +
                                    image_path.split('\\')[-1][:-4] + '.png')

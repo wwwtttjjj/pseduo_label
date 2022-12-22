@@ -100,6 +100,8 @@ def create_index(json_path):
 def get_PED_mask(PED_index, label_slic):
     PED_mask = {}
     PED_short_mask = {}
+    slope_mask = {}
+    slope_short_mask = {}
 
     for i in range(0, len(PED_index), 2):
         PED_xy = []
@@ -107,14 +109,20 @@ def get_PED_mask(PED_index, label_slic):
         end = PED_index[i + 1]
         if start[1] > end[1]:
             start, end = end, start
+        A = end[1] - start[1]#y2-y1
+        B = start[0] - end[0]#x1-x2
+        C = end[0] * start[1] - start[0] * end[1]#x2 * y1 - x1 * y2
         PED_xy += get_PED_index(PED_index[i], PED_index[i + 1])
         if len(PED_xy) < 3:
             for [x, y] in PED_xy:
                 PED_short_mask[label_slic[x][y]] = labels2color['PED']
+                slope_short_mask[label_slic[x][y]] = [A, B, C]
         else:
             for [x, y] in PED_xy:
                 PED_mask[label_slic[x][y]] = labels2color['PED']
-    return PED_mask, PED_short_mask
+                slope_mask[label_slic[x][y]] = [A, B, C]
+        
+    return PED_mask, PED_short_mask, {**slope_mask, **slope_short_mask}
 
 
 '''get the masked of SRF and IRF'''
@@ -125,16 +133,19 @@ def get_SRF_IRF_mask(SRF_IRF_index, label_slic):
     for key, value in SRF_IRF_index.items():
         SRF_IRF_mask[label_slic[key[0]][key[1]]] = value
     return SRF_IRF_mask
-
+def sin(point_1, point_2):
+    return (point_1[0] - point_2[0]) / math.sqrt((point_2[1] - point_1[1]) **2 + (point_2[0] - point_1[0]) ** 2 + 0.01)
 
 '''generate the slic superpixel img'''
 
 
-def create_SLIC_image(img_path, region_size=20, ruler=20, iterate=10):
+def create_SLIC_image(img_path, json_path, region_size=20, ruler=20, iterate=10):
     img = cv2.imread(img_path)
+    PED_index, SRF_IRF_index, mask_blank = create_index(json_path)
+    if not SRF_IRF_index:
+        img = usm_edge_sharpening(img)
     # sample = trans(image = img)#CACLE
     # img = sample['image']
-    # img = usm_edge_sharpening(img)
     #初始化slic项，超像素平均尺寸20（默认为10），平滑因子20
     slic = cv2.ximgproc.createSuperpixelSLIC(img,
                                              region_size=region_size,
@@ -167,22 +178,6 @@ def create_SLIC_image(img_path, region_size=20, ruler=20, iterate=10):
         else:
             xy_center.append([])
 
-    for x in range(W):
-        for y in range(H):
-            if mask_slic[x][y] == 255:
-                for dx, dy in [(-1, 0), (-1, -1), (-1, 1)]:  #(-1, -1), (-1, 1)
-                    n_x, n_y = x + dx, y + dy
-                    if n_x >= 0 and n_x < W and n_y >= 0 and n_y < H:
-                        if label_slic[n_x][n_y] != label_slic[x][
-                                y] and label_slic[n_x][n_y] not in neigbor_up[
-                                    label_slic[x][y]] and len(
-                                        neigbor_up[label_slic[x][y]]
-                                    ) < 2:  #and p_p_distance(xy_center[label_slic[x][y]], xy_center[label_slic[n_x][n_y]]) < proximity_distance:
-                            # print(1)
-                            # break
-                            neigbor_up[label_slic[x][y]].append(
-                                label_slic[n_x][n_y])
-
     neigbor_all = [[] for _ in range(number_slic)]  #save the neigbor relation
     for x in range(W):
         for y in range(H):
@@ -198,9 +193,17 @@ def create_SLIC_image(img_path, region_size=20, ruler=20, iterate=10):
                             # break
                             neigbor_all[label_slic[x][y]].append(
                                 label_slic[n_x][n_y])
+                        if label_slic[n_x][n_y] != label_slic[x][
+                                y] and label_slic[n_x][n_y] not in neigbor_up[
+                                    label_slic[x][y]] and sin(xy_center[label_slic[x][y]], xy_center[label_slic[n_x][n_y]]) >= 0.5:
+                            # print(1)
+                            # break
+                            neigbor_up[label_slic[x][y]].append(
+                                label_slic[n_x][n_y])
+
     #get the center of each superpixel
 
-    return clsuters, neigbor_up, neigbor_all, label_slic, img, xy_center
+    return clsuters, neigbor_up, neigbor_all, label_slic, img, xy_center, PED_index, SRF_IRF_index, mask_blank
 
 
 '''compute the dist matchscore (crop,mask)'''
@@ -297,11 +300,10 @@ def get_PED_labels(masked_index,
     if len(masked_index) < 3:
         return masked_index, probability_map
     stack = []
-    already = []
     truth_mask = {}
     # add_t = 0.001
     for key, value in masked_index.items():
-        already.append(key)
+        # already.append(key)
         stack.append(key)
         truth_mask[key] = value
         num = 0
@@ -311,18 +313,17 @@ def get_PED_labels(masked_index,
             if dice >= Threshold:
                 neigbor_keys = neigbor[current_key]
                 for neigbor_key in neigbor_keys:
-                    if neigbor_key not in already:
-                        already.append(neigbor_key)
+                    if neigbor_key not in masked_index:
+                    # if neigbor_key not in already:
+                    #     already.append(neigbor_key)
                         stack.append(neigbor_key)
                 truth_mask[current_key] = value
                 num += 1
                 if key != current_key:
                     distance = p_p_distance(xy_center[key], xy_center[current_key]) // proximity_distance + 1#几格距离
                     probability_map = set_probality(clsuters, probability_map, distance, current_key)
-            #neigbor set 0.8(0 label)
-            elif dice >= 0.5:
-                probability_map = set_probality(clsuters, probability_map, 4, current_key)
-            if num >= 9:
+            if num >= 70:
+                stack = []
                 break
             else:
                 continue
@@ -366,9 +367,6 @@ def get_SRF_IRF_labels(masked_index,
                 if key != current_key:
                     distance = p_p_distance(xy_center[key], xy_center[current_key]) // proximity_distance + 1#几格距离
                     probability_map = set_probality(clsuters, probability_map, distance, current_key)
-                #neigbor set 0.8(0 label)
-            elif dice >= 0.5:
-                probability_map = set_probality(clsuters, probability_map, 4, current_key)
             else:
                 continue
     return truth_mask, probability_map
@@ -400,9 +398,9 @@ def fill_holes(clsuters, neigbor, truth_mask, probability_map):
                     break
             else:
                 break
-        if num >= l - 2:
+        if num == l - 1:
             add_mask[p] = value
-            probability_map = set_probality(clsuters, probability_map, 3, p)#fill的块修改为0.8
+            probability_map = set_probality(clsuters, probability_map, 1, p)#fill的块修改为1
     return {**truth_mask, **add_mask}, probability_map
 
 
@@ -433,5 +431,5 @@ def get_detach_PED(truth_PED_mask, neigbor, truth_SRF_IRF_mask, clsuters, probab
                 continue
     for k in del_key:
         truth_PED_mask.pop(k, None)
-        probability_map = set_probality(clsuters, probability_map, 0, k)
+        probability_map = set_probality(clsuters, probability_map, 10, k)
     return truth_PED_mask

@@ -30,8 +30,8 @@ def get_IOU(W, H, pre_path, gt_path):
         print("Class "+str(clas)+' :'+str(res[i]))
 def get_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--W', type = int, default=560)
-    parser.add_argument('--H', type = int, default=1476)
+    parser.add_argument('--W', type = int, default=250)
+    parser.add_argument('--H', type = int, default=600)
     parser.add_argument('--pre_path', type = str, default='data/pseudo_label')
     parser.add_argument('--gt_path', type = str, default='data/label')
 
